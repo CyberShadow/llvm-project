@@ -434,9 +434,6 @@ Expected<const CVIndexMap &> PDBLinker::maybeMergeTypeServerPDB(ObjFile *File) {
   Expected<pdb::TpiStream &> ExpectedTpi = PDBFile.getPDBTpiStream();
   if (auto E = ExpectedTpi.takeError())
     fatal("Type server does not have TPI stream: " + toString(std::move(E)));
-  Expected<pdb::TpiStream &> ExpectedIpi = PDBFile.getPDBIpiStream();
-  if (auto E = ExpectedIpi.takeError())
-    fatal("Type server does not have TPI stream: " + toString(std::move(E)));
 
   if (Config->DebugGHashes) {
     // PDBs do not actually store global hashes, so when merging a type server
@@ -445,8 +442,6 @@ Expected<const CVIndexMap &> PDBLinker::maybeMergeTypeServerPDB(ObjFile *File) {
     // synthesize hashes for the IPI stream, using the hashes for the TPI stream
     // as inputs.
     auto TpiHashes = GloballyHashedType::hashTypes(ExpectedTpi->typeArray());
-    auto IpiHashes =
-        GloballyHashedType::hashIds(ExpectedIpi->typeArray(), TpiHashes);
 
     Optional<uint32_t> EndPrecomp;
     // Merge TPI first, because the IPI stream will reference type indices.
@@ -456,10 +451,20 @@ Expected<const CVIndexMap &> PDBLinker::maybeMergeTypeServerPDB(ObjFile *File) {
       fatal("codeview::mergeTypeRecords failed: " + toString(std::move(Err)));
 
     // Merge IPI.
-    if (auto Err = mergeIdRecords(TMerger.GlobalIDTable, IndexMap.TPIMap,
-                                  IndexMap.IPIMap, ExpectedIpi->typeArray(),
-                                  IpiHashes))
-      fatal("codeview::mergeIdRecords failed: " + toString(std::move(Err)));
+    if (PDBFile.hasPDBIpiStream()) {
+      Expected<pdb::TpiStream &> ExpectedIpi = PDBFile.getPDBIpiStream();
+      if (auto E = ExpectedIpi.takeError())
+        fatal("Error getting type server IPI stream: " +
+              toString(std::move(E)));
+
+      auto IpiHashes =
+          GloballyHashedType::hashIds(ExpectedIpi->typeArray(), TpiHashes);
+
+      if (auto Err = mergeIdRecords(TMerger.GlobalIDTable, IndexMap.TPIMap,
+                                    IndexMap.IPIMap, ExpectedIpi->typeArray(),
+                                    IpiHashes))
+        fatal("codeview::mergeIdRecords failed: " + toString(std::move(Err)));
+    }
   } else {
     // Merge TPI first, because the IPI stream will reference type indices.
     if (auto Err = mergeTypeRecords(TMerger.TypeTable, IndexMap.TPIMap,
@@ -467,9 +472,16 @@ Expected<const CVIndexMap &> PDBLinker::maybeMergeTypeServerPDB(ObjFile *File) {
       fatal("codeview::mergeTypeRecords failed: " + toString(std::move(Err)));
 
     // Merge IPI.
-    if (auto Err = mergeIdRecords(TMerger.IDTable, IndexMap.TPIMap,
-                                  IndexMap.IPIMap, ExpectedIpi->typeArray()))
-      fatal("codeview::mergeIdRecords failed: " + toString(std::move(Err)));
+    if (PDBFile.hasPDBIpiStream()) {
+      Expected<pdb::TpiStream &> ExpectedIpi = PDBFile.getPDBIpiStream();
+      if (auto E = ExpectedIpi.takeError())
+        fatal("Error getting type server IPI stream: " +
+              toString(std::move(E)));
+
+      if (auto Err = mergeIdRecords(TMerger.IDTable, IndexMap.TPIMap,
+                                    IndexMap.IPIMap, ExpectedIpi->typeArray()))
+        fatal("codeview::mergeIdRecords failed: " + toString(std::move(Err)));
+    }
   }
 
   return IndexMap;
