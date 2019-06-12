@@ -29,7 +29,7 @@ Error llvm::codeview::visitDebugSubsection(
     const DebugSubsectionRecord &R, DebugSubsectionVisitor &V,
     const StringsAndChecksumsRef &State) {
   BinaryStreamReader Reader(R.getRecordData());
-  switch (R.kind()) {
+  switch ((DebugSubsectionKind)((int)R.kind() & 0x7FFFFFFF)) {
   case DebugSubsectionKind::Lines: {
     DebugLinesSubsectionRef Fragment;
     if (auto EC = Fragment.initialize(Reader))
